@@ -110,8 +110,14 @@ async def confirm_node(state: AgentState) -> AgentState:
     return {"confirmed": bool(decision)}
 
 
+def _route_after_classify(state: AgentState) -> str:
+    # An action goes straight to the human-in-the-loop gate — no need to retrieve
+    # tax law to record an entry (that's why the confirmation carried stray citations).
+    return "confirm" if state.get("intent") == "action" else "retrieve"
+
+
 def _route_after_retrieve(state: AgentState) -> str:
-    return {"compute": "compute", "action": "confirm"}.get(state.get("intent", "question"), "answer")
+    return "compute" if state.get("intent") == "compute" else "answer"
 
 
 _ANSWER_SYS = (
@@ -171,9 +177,10 @@ def build_graph(checkpointer=None):
     g.add_node("confirm", confirm_node)
     g.add_node("answer", answer_node)
     g.set_entry_point("classify")
-    g.add_edge("classify", "retrieve")
+    g.add_conditional_edges("classify", _route_after_classify,
+                            {"confirm": "confirm", "retrieve": "retrieve"})
     g.add_conditional_edges("retrieve", _route_after_retrieve,
-                            {"compute": "compute", "confirm": "confirm", "answer": "answer"})
+                            {"compute": "compute", "answer": "answer"})
     g.add_edge("compute", "answer")
     g.add_edge("confirm", "answer")
     g.add_edge("answer", END)
