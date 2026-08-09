@@ -1,5 +1,7 @@
 # LedgerLens
 
+[![CI](https://github.com/pratikrevankar/ledgerlens/actions/workflows/ci.yml/badge.svg)](https://github.com/pratikrevankar/ledgerlens/actions/workflows/ci.yml)
+
 **A citation-grounded GST compliance agent.** Ask a real Indian-tax question in
 plain English; LedgerLens retrieves the governing provision, runs the exact tax
 math in code (never the model), and answers **with a citation after every claim —

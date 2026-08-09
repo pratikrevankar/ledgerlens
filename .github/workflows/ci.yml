@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: backend — tests + retrieval evals
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ledgerlens
+          POSTGRES_PASSWORD: ledgerlens
+          POSTGRES_DB: ledgerlens
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U ledgerlens"
+          --health-interval 5s --health-timeout 5s --health-retries 15
+    env:
+      DATABASE_URL: postgresql://ledgerlens:ledgerlens@localhost:5432/ledgerlens
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install deps
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Unit tests (GST calculator — no infra)
+        working-directory: backend
+        run: pytest evals/test_gst_tool.py -q
+      - name: Seed corpus into pgvector
+        working-directory: backend
+        run: python -m app.ingest
+      - name: Retrieval evals (recall@4 gate)
+        working-directory: backend
+        run: python -m evals.run_evals
+
+  frontend:
+    name: frontend — build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install + build
+        working-directory: frontend
+        run: |
+          npm install
+          npm run build
