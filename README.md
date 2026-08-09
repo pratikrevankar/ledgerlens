@@ -48,10 +48,10 @@ Next.js UI ──SSE──► FastAPI (Python) ──► LangGraph agent ──�
 
 ```bash
 cp backend/.env.example backend/.env      # add your ANTHROPIC_API_KEY
-docker compose up --build                 # db + backend; seeds the corpus on boot
+docker compose up --build                 # db + backend + UI; seeds the corpus on boot
 ```
 
-Then hit the streaming API:
+Open the chat at **http://localhost:3000**, or hit the streaming API directly:
 
 ```bash
 curl -N -X POST localhost:8000/chat -H 'content-type: application/json' \
