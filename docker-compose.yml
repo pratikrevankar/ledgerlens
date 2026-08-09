@@ -10,7 +10,8 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
-    ports: ["5432:5432"]
+    # no host port — the backend reaches the DB over the internal compose network,
+    # so we don't collide with a Postgres already running on the host's 5432.
     volumes: ["pgdata:/var/lib/postgresql/data"]
 
   backend:

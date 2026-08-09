@@ -23,9 +23,10 @@ from .tools import GstInput, compute_gst
 LLM_MODEL = os.getenv("LLM_MODEL", "claude-sonnet-5")  # override with any current Claude model id
 
 
-def _llm(temperature: float = 0.0, streaming: bool = False):
+def _llm(streaming: bool = False):
     from langchain_anthropic import ChatAnthropic
-    return ChatAnthropic(model=LLM_MODEL, temperature=temperature, streaming=streaming, max_tokens=1024)
+    # Note: newer Claude models reject an explicit `temperature`, so we don't set it.
+    return ChatAnthropic(model=LLM_MODEL, streaming=streaming, max_tokens=2048)
 
 
 # ── State ────────────────────────────────────────────────────────────

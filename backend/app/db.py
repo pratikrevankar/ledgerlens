@@ -13,6 +13,10 @@ _pool: Optional[asyncpg.Pool] = None
 
 
 async def _init(conn: asyncpg.Connection) -> None:
+    # The vector type must exist before asyncpg can introspect it, and the pool's
+    # very first connection runs before ingest creates the extension — so ensure it
+    # here (idempotent) prior to registering the codec.
+    await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
     await register_vector(conn)  # lets us pass/receive python lists as vector()
 
 
