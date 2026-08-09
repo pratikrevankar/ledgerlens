@@ -31,20 +31,41 @@ or refuses if it has no source.** State-changing actions pause for human approva
 
 ## Architecture
 
-```
-Next.js UI ──SSE──► FastAPI (Python) ──► LangGraph agent ──► Postgres + pgvector
-                                              │
-              classify ─► retrieve ─┬─► compute ─►┐
-                                    ├─► confirm ──►┤  (interrupt: human approval)
-                                    └─────────────►┴─► answer  (grounded, streamed)
+**System** — the browser streams from a Python API; the agent grounds in pgvector,
+computes in code, and persists its human-in-the-loop state in Postgres. The LLM is
+used only to classify, extract, and write:
+
+```mermaid
+flowchart LR
+  UI["Next.js UI"] -- "SSE (tokens · nodes · interrupt)" --> API["FastAPI · Python"]
+  API --> G["LangGraph agent"]
+  G <-- "hybrid search · durable checkpoint" --> PG[("Postgres + pgvector")]
+  EMB["bge-small · local, keyless"] -. embeddings .-> G
+  G <-- "classify · extract · write prose" --> LLM["Claude · Anthropic"]
 ```
 
-- **Retrieval is hybrid** — dense embeddings catch paraphrase, keyword catches exact
+**Agent graph** — steps have different trust levels, so each is its own node.
+Actions divert to a human-approval interrupt before anything is "committed":
+
+```mermaid
+flowchart TD
+  Q([user query]) --> C{classify intent}
+  C -- action --> CF["confirm ⏸"]
+  C -- "question / compute" --> R["retrieve · hybrid RAG"]
+  R -- needs calc --> CP["compute · GST tool"]
+  R -- question --> A
+  CP --> A
+  CF -- "human approves → resume" --> A["answer · grounded, cited"]
+  A --> OUT([streamed via SSE])
+```
+
+- **Hybrid retrieval** — dense embeddings catch paraphrase, keyword catches exact
   statutory terms (`section 16`, `LUT`, `ITC`); [Reciprocal Rank Fusion](backend/app/retrieval.py) merges them.
-- **Embeddings run locally** (BAAI/bge-small, 384-dim, via fastembed) — retrieval
-  needs **no API key**. Only generation needs one LLM key.
-- **The math is code, not the model** — [`compute_gst`](backend/app/tools.py) is pure
-  and unit-tested; the LLM only decides *when* to call it and with what inputs.
+- **Local embeddings** (BAAI/bge-small, 384-dim, fastembed) — retrieval needs **no API key**; only generation needs one.
+- **Math is code, not the model** — [`compute_gst`](backend/app/tools.py) is pure + unit-tested; the LLM only decides *when* to call it.
+- **Durable human-in-the-loop** — the interrupt/resume checkpoint lives in Postgres, so a paused run survives a restart or serverless cold start.
+
+> The reasoning behind each of these choices — and the trade-offs — is written up in **[DESIGN.md](DESIGN.md)**.
 
 ## Quickstart
 

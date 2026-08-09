@@ -3,31 +3,63 @@
 Streams the agent run as it happens: which node is active, the retrieved
 citations, the answer tokens, and any human-in-the-loop interrupt. Plain async
 SSE over the LangGraph event stream — no Edge runtime required for streaming.
+
+The human-in-the-loop checkpoint is persisted in Postgres (not in memory), so a
+run that paused for approval survives a backend restart / serverless cold start —
+the /resume can land on a different process and still continue.
 """
 from __future__ import annotations
 
 import json
-from typing import AsyncIterator
+import logging
+import os
+from contextlib import asynccontextmanager
+from typing import AsyncIterator, Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 from pydantic import BaseModel
 
 from .db import close_pool
 from .graph import build_graph
 
+log = logging.getLogger("ledgerlens")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://ledgerlens:ledgerlens@db:5432/ledgerlens")
 NODE_NAMES = {"classify", "retrieve", "compute", "confirm", "answer"}
 
-app = FastAPI(title="LedgerLens", version="0.1.0")
+_graph = None  # compiled graph, set on startup by the lifespan below
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Compile the graph with a PERSISTENT Postgres checkpointer for the app's
+    lifetime. Falls back to in-memory only if Postgres is unreachable, so the demo
+    still runs — but the default, and the point, is durable interrupt/resume."""
+    global _graph
+    try:
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        async with AsyncPostgresSaver.from_conn_string(DATABASE_URL) as saver:
+            await saver.setup()  # idempotent — creates the checkpoint tables
+            _graph = build_graph(checkpointer=saver)
+            log.info("checkpointer: postgres (durable human-in-the-loop)")
+            yield
+            await close_pool()
+            return
+    except Exception as e:  # noqa: BLE001 — degrade gracefully, never fail to boot
+        log.warning("postgres checkpointer unavailable (%s) — using in-memory", e)
+
+    from langgraph.checkpoint.memory import MemorySaver
+    _graph = build_graph(checkpointer=MemorySaver())
+    yield
+    await close_pool()
+
+
+app = FastAPI(title="LedgerLens", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
-
-_checkpointer = MemorySaver()
-_graph = build_graph(checkpointer=_checkpointer)
 
 
 class ChatRequest(BaseModel):
@@ -60,7 +92,7 @@ async def _run(payload, config) -> AsyncIterator[str]:
             if text:
                 yield _sse("token", {"text": text})
 
-    # After the stream drains, check whether we paused on a human-in-the-loop interrupt.
+    # After the stream drains, surface a human-in-the-loop interrupt if we paused.
     snap = await _graph.aget_state(config)
     interrupts = getattr(snap, "interrupts", None) or []
     if interrupts:
@@ -74,25 +106,16 @@ async def _run(payload, config) -> AsyncIterator[str]:
 @app.post("/chat")
 async def chat(req: ChatRequest):
     config = {"configurable": {"thread_id": req.thread_id}}
-    return StreamingResponse(
-        _run({"query": req.query}, config), media_type="text/event-stream",
-    )
+    return StreamingResponse(_run({"query": req.query}, config), media_type="text/event-stream")
 
 
 @app.post("/resume")
 async def resume(req: ResumeRequest):
-    """Continue a run that paused for human confirmation."""
+    """Continue a run that paused for human confirmation — even after a restart."""
     config = {"configurable": {"thread_id": req.thread_id}}
-    return StreamingResponse(
-        _run(Command(resume=req.approved), config), media_type="text/event-stream",
-    )
+    return StreamingResponse(_run(Command(resume=req.approved), config), media_type="text/event-stream")
 
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
-
-
-@app.on_event("shutdown")
-async def _shutdown():
-    await close_pool()
