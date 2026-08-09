@@ -1,0 +1,15 @@
+{"query": "What GST applies when I sell to a customer in another state?", "expect": ["igst-s5", "igst-s7"], "category": "interstate"}
+{"query": "Which section decides the place of supply of services?", "expect": ["igst-s12"], "category": "place-of-supply"}
+{"query": "Under what conditions can I claim input tax credit?", "expect": ["cgst-s16"], "category": "itc"}
+{"query": "What is the turnover threshold for GST registration?", "expect": ["cgst-s22"], "category": "registration"}
+{"query": "When do I have to issue a tax invoice?", "expect": ["cgst-s31"], "category": "invoice"}
+{"query": "How is the taxable value of a supply calculated?", "expect": ["cgst-s15"], "category": "valuation"}
+{"query": "What are the composition scheme rates for a trader?", "expect": ["cgst-s10"], "category": "composition"}
+{"query": "Above what consignment value do I need an e-way bill?", "expect": ["eway-r138"], "category": "eway"}
+{"query": "What turnover makes e-invoicing mandatory?", "expect": ["einvoice-r48"], "category": "einvoice"}
+{"query": "By when must a credit note be declared?", "expect": ["cgst-s34"], "category": "credit-note"}
+{"query": "On which purchases is ITC blocked?", "expect": ["cgst-s17-5"], "category": "blocked-credit"}
+{"query": "When is tax payable under reverse charge?", "expect": ["cgst-s9", "igst-s5"], "category": "reverse-charge"}
+{"query": "How do exports work under an LUT without paying IGST?", "expect": ["igst-s16"], "category": "exports"}
+{"query": "What is the due date for the annual return?", "expect": ["cgst-s44"], "category": "annual-return"}
+{"query": "What is the time of supply for goods?", "expect": ["cgst-s12"], "category": "time-of-supply"}

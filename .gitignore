@@ -1,0 +1,13 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+# node / next
+node_modules/
+.next/
+out/
+# misc
+.DS_Store
+.fastembed_cache/
