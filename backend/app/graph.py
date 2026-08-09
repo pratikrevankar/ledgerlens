@@ -13,6 +13,7 @@ before any state-changing "action" until a human approves.
 from __future__ import annotations
 
 import os
+import re
 from typing import List, Literal, Optional, TypedDict
 
 from pydantic import BaseModel, Field
@@ -56,7 +57,18 @@ class _GstExtract(BaseModel):
 
 
 # ── Nodes ────────────────────────────────────────────────────────────
+# A clear "commit something to the books" phrasing is always an ACTION — pin it
+# deterministically so the human-in-the-loop gate never depends on an LLM guess.
+_ACTION_RE = re.compile(
+    r"\b(record|book|post|create|save|add|enter|register|log)\b[\w\s,₹.]{0,40}\b"
+    r"(sale|purchase|invoice|voucher|entry|bill|payment|receipt|transaction|expense)\b",
+    re.I,
+)
+
+
 async def classify_node(state: AgentState) -> AgentState:
+    if _ACTION_RE.search(state["query"]):
+        return {"intent": "action"}
     llm = _llm().with_structured_output(_Intent)
     res: _Intent = await llm.ainvoke(
         f"Classify this user request for a GST assistant.\n\nRequest: {state['query']}")
@@ -110,7 +122,28 @@ _ANSWER_SYS = (
 )
 
 
+def _as_text(content) -> str:
+    """Normalise an LLM message's content to plain text. Reasoning models (e.g.
+    claude-sonnet-5) return a LIST of blocks (thinking + text) — keep only text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            b.get("text", "") for b in content
+            if isinstance(b, dict) and b.get("type") == "text"
+        )
+    return str(content)
+
+
 async def answer_node(state: AgentState):
+    # Action path is deterministic — never grounded, never an LLM call. Approving
+    # confirms; rejecting cancels. (Demo: there is no real ledger to write to.)
+    if state.get("intent") == "action":
+        if state.get("confirmed"):
+            return {"answer": f"✓ Approved — I'd post this entry to the ledger now: “{state['query']}”.\n"
+                              f"(Demo build: no persistent write.)"}
+        return {"answer": "No problem — I haven't recorded anything."}
+
     ctx = "\n\n".join(f"[{c['citation']}] {c['title']}\n{c['content']}" for c in state.get("chunks", []))
     tool = state.get("tool_result")
     tool_txt = ""
@@ -118,8 +151,6 @@ async def answer_node(state: AgentState):
         tool_txt = f"\n\nComputed result (trust these numbers, they are exact):\n{tool}"
     elif tool and tool.get("error") == "missing_inputs":
         tool_txt = f"\n\nThe user asked for a calculation but did not give: {tool['need']}. Ask for them."
-    if state.get("intent") == "action" and state.get("confirmed") is False:
-        return {"answer": "No problem — I have not recorded anything."}
 
     llm = _llm(streaming=True)
     from langchain_core.messages import SystemMessage, HumanMessage
@@ -127,7 +158,7 @@ async def answer_node(state: AgentState):
         SystemMessage(content=_ANSWER_SYS),
         HumanMessage(content=f"Context:\n{ctx}{tool_txt}\n\nUser question: {state['query']}"),
     ])
-    return {"answer": msg.content}
+    return {"answer": _as_text(msg.content)}
 
 
 # ── Assembly ─────────────────────────────────────────────────────────
