@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from .retrieval import retrieve as hybrid_retrieve, Chunk
 from .tools import GstInput, compute_gst
 from .critic import verify_grounded
+from .prompt_cache import text_block
 
 LLM_MODEL = os.getenv("LLM_MODEL", "claude-sonnet-5")  # override with any current Claude model id
 MAX_REVISIONS = 1  # Reflexion: at most one self-correction pass after the critic
@@ -172,11 +173,18 @@ async def answer_node(state: AgentState):
         fix = (f"\n\nYOUR PREVIOUS DRAFT WAS NOT FULLY GROUNDED. {state['critique']}\n"
                "Rewrite the answer to fix this — every claim must trace to the context above.")
 
+    # Prompt caching: the system prompt + retrieved context are a stable prefix,
+    # IDENTICAL on the first draft and the Reflexion self-correction pass for one
+    # query — mark them cacheable so the second call reads them from cache. The
+    # question (which varies, and carries the critique on a rewrite) is not cached.
     llm = _llm(streaming=True)
     from langchain_core.messages import SystemMessage, HumanMessage
     msg = await llm.ainvoke([
-        SystemMessage(content=_ANSWER_SYS),
-        HumanMessage(content=f"Context:\n{ctx}{tool_txt}\n\nUser question: {state['query']}{fix}"),
+        SystemMessage(content=[text_block(_ANSWER_SYS)]),
+        HumanMessage(content=[
+            text_block(f"Context:\n{ctx}{tool_txt}"),
+            text_block(f"\n\nUser question: {state['query']}{fix}", cache=False),
+        ]),
     ])
     return {"answer": _as_text(msg.content)}
 

@@ -47,7 +47,9 @@ the remote DB (locally or from CI):
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-DATABASE_URL='<the pgvector DSN>' python -m app.ingest
+# CONTEXTUAL_RETRIEVAL=template is keyless and measurably better (hybrid recall@4
+# 89%→93%); omit it for the plain baseline, or use =llm for LLM-written context.
+DATABASE_URL='<the pgvector DSN>' CONTEXTUAL_RETRIEVAL=template python -m app.ingest
 ```
 
 `app.ingest` is idempotent: it `CREATE EXTENSION IF NOT EXISTS vector`, applies

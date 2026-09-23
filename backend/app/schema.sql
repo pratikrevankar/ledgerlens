@@ -14,8 +14,9 @@ CREATE TABLE IF NOT EXISTS gst_chunks (
   citation_ref  TEXT        NOT NULL,          -- 'CGST Act, s.16'  → shown as the citation
   topics        TEXT[]      NOT NULL DEFAULT '{}',
   content       TEXT        NOT NULL,
-  embedding     vector(384),                   -- dense semantic vector
-  content_tsv   tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(title,'') || ' ' || coalesce(content,''))) STORED,
+  context       TEXT        NOT NULL DEFAULT '',  -- Contextual Retrieval: situating prefix
+  embedding     vector(384),                   -- dense semantic vector (of context + title + content)
+  content_tsv   tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(context,'') || ' ' || coalesce(title,'') || ' ' || coalesce(content,''))) STORED,
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 

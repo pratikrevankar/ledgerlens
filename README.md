@@ -105,17 +105,26 @@ python -m evals.run_llm_evals                          # generation: LLM-as-judg
 injectable scorer, so it runs with no DB, key, or model download.
 
 **2 · Retrieval quality (`run_evals.py`)** — recall@k and MRR over a labelled set,
-measured with the cross-encoder **reranker off vs on** so the lift is quantified,
-not asserted. On the current 27-case set (`top_k=4`):
+measured across configurations so every lift is quantified, not asserted. On the
+27-case set (`top_k=4`), all runs keyless (embeddings + reranker are local):
 
 | config | recall@4 | MRR |
 |---|---|---|
 | hybrid (dense + sparse, RRF) | 89% | 0.790 |
-| **hybrid + cross-encoder reranker** | **93%** | **0.861** |
+| + cross-encoder reranker | 93% | 0.861 |
+| + contextual retrieval (`CONTEXTUAL_RETRIEVAL=template`) | **93%** | **0.864** |
+| contextual + reranker | 93% | 0.843 |
 
-The reranker (`app/reranker.py`, fastembed cross-encoder, local + keyless) re-scores
-the fused shortlist jointly per (query, provision) pair; it degrades gracefully to
-the fused order if the model can't load, so it's an enhancement, never a hard dep.
+Two levers, and the honest finding: the **reranker** (`app/reranker.py`, fastembed
+cross-encoder) re-scores the fused shortlist jointly per (query, provision) pair —
+89%→93%, MRR +0.07. **Contextual Retrieval** (`app/contextualize.py`, Anthropic's
+technique — a situating prefix is embedded with each provision) reaches the same
+recall *at retrieval time*, edging MRR slightly higher. On this small, already
+self-contained corpus the two are **substitutes near the ceiling** — stacking them
+doesn't compound (the reranker even nudges MRR down once retrieval is well-ordered).
+On a large, fragmented corpus they'd combine; here the measurement says pick one.
+Both degrade gracefully and are off/keyless by default; `CONTEXTUAL_RETRIEVAL=llm`
+uses the model to write the context (needs a key, prompt-cached across provisions).
 
 **3 · Generation quality (`run_llm_evals.py`)** — runs the full agent, then grades
 each answer with an **LLM-as-judge** (faithfulness + answer-relevance, RAGAS-style)
@@ -123,6 +132,16 @@ plus a **deterministic citation-validity** check (every `[Act, s.X]` cited must 
 in the retrieved context — catches invented citations). An **adversarial suite**
 (`adversarial.jsonl`) verifies the agent refuses out-of-scope/no-source questions
 and shrugs off prompt-injection in the query rather than getting hijacked.
+
+## Prompt caching
+
+The answer node marks its static system prompt + retrieved context as cacheable
+(`app/prompt_cache.py`, Anthropic `cache_control`). Those tokens are IDENTICAL on
+the first draft and the Reflexion self-correction pass for a given query, so the
+second call reads them from cache — lower latency and ~10× cheaper on the reused
+input. The ingest-time contextualizer likewise caches the corpus overview across
+all 25 provisions. Anthropic only caches a prefix above a per-model minimum, so on
+a short context the marker is a harmless no-op; toggle with `PROMPT_CACHE`.
 
 ## Observability
 
