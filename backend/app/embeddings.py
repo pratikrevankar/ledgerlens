@@ -6,6 +6,7 @@ to the QUERY (not the documents) for best retrieval quality.
 """
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from typing import List
 
@@ -18,8 +19,12 @@ _QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
 
 @lru_cache(maxsize=1)
 def _model() -> TextEmbedding:
-    # Downloaded once and cached in the image/volume.
-    return TextEmbedding(model_name=MODEL_NAME)
+    # Downloaded once and cached. On a normal box fastembed's default cache dir is
+    # fine; on a read-only serverless filesystem (Vercel) only /tmp is writable, so
+    # FASTEMBED_CACHE_DIR must point there (e.g. /tmp/fastembed) or the download
+    # fails at import time. Passing cache_dir=None keeps the default locally.
+    cache_dir = os.getenv("FASTEMBED_CACHE_DIR") or None
+    return TextEmbedding(model_name=MODEL_NAME, cache_dir=cache_dir)
 
 
 def embed_documents(texts: List[str]) -> List[List[float]]:
