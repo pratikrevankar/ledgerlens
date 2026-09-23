@@ -25,8 +25,13 @@ from pydantic import BaseModel
 
 from .db import close_pool
 from .graph import build_graph
+from .tracing import configure as configure_tracing, run_config
 
 log = logging.getLogger("ledgerlens")
+# Turn on LangSmith tracing if the env asks for it (normalises var names). Every
+# node/tool/LLM call is then a nested run; the per-request run_config below tags
+# and adds metadata so traces are filterable.
+_TRACING = configure_tracing()
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://ledgerlens:ledgerlens@db:5432/ledgerlens")
 NODE_NAMES = {"classify", "retrieve", "compute", "confirm", "answer", "verify"}
 
@@ -126,7 +131,7 @@ async def _run(graph, payload, config) -> AsyncIterator[str]:
 @app.post("/chat")
 async def chat(req: ChatRequest):
     graph = await _ensure_graph()
-    config = {"configurable": {"thread_id": req.thread_id}}
+    config = run_config(req.thread_id, {"query": req.query[:200]})
     return StreamingResponse(_run(graph, {"query": req.query}, config), media_type="text/event-stream")
 
 
@@ -134,7 +139,7 @@ async def chat(req: ChatRequest):
 async def resume(req: ResumeRequest):
     """Continue a run that paused for human confirmation — even after a restart."""
     graph = await _ensure_graph()
-    config = {"configurable": {"thread_id": req.thread_id}}
+    config = run_config(req.thread_id, {"resumed": True, "approved": req.approved})
     return StreamingResponse(_run(graph, Command(resume=req.approved), config), media_type="text/event-stream")
 
 

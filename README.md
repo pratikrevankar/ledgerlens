@@ -145,8 +145,18 @@ a short context the marker is a harmless no-op; toggle with `PROMPT_CACHE`.
 
 ## Observability
 
-Set `LANGSMITH_TRACING=true` + a `LANGSMITH_API_KEY` in `.env` to trace every run,
-node transition and tool call in LangSmith.
+Set `LANGSMITH_TRACING=true` + `LANGSMITH_API_KEY` (and optionally
+`LANGSMITH_PROJECT`) in `.env`. Every request then appears in LangSmith as one
+nested trace — `classify → retrieve → compute → confirm → answer → verify`, with
+each LLM call's prompt, tokens, latency and (with caching on) cache hits.
+
+Each run is tagged and carries metadata (`app/tracing.py`) so the traces are
+*filterable*, not just a pile: `thread_id`, the resolved feature flags
+(`rerank`, `contextual_retrieval`, `prompt_cache`), and `eval:true` for runs from
+`run_llm_evals`. So "find the run where the answer was wrong and see which node
+failed" is a filter, and A/B'ing a lever is `tags: ctx:template` vs `ctx:off`.
+`configure()` also mirrors the `LANGSMITH_*` vars to the older `LANGCHAIN_*` names,
+so tracing turns on regardless of SDK version.
 
 ## Stack
 

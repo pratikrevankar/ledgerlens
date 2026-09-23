@@ -29,6 +29,7 @@ from typing import List
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.graph import build_graph  # noqa: E402
+from app.tracing import configure as configure_tracing, run_config  # noqa: E402
 from evals import judge  # noqa: E402
 
 # Aggregate gates (mean over cases / pass-rate over adversarial).
@@ -52,7 +53,7 @@ def _graph():
 
 async def _run_once(graph, query: str) -> dict:
     tid = uuid.uuid4().hex
-    state = await graph.ainvoke({"query": query}, config={"configurable": {"thread_id": tid}})
+    state = await graph.ainvoke({"query": query}, config=run_config(tid, {"eval": True}))
     chunks = state.get("chunks", []) or []
     context = "\n\n".join(f"[{c['citation']}] {c['title']}\n{c['content']}" for c in chunks)
     return {
@@ -104,6 +105,7 @@ async def _adversarial(graph) -> tuple[float, list]:
 
 
 async def main() -> int:
+    configure_tracing()  # trace eval runs into LangSmith too, tagged eval=true
     graph = _graph()
     faith, rel, cite, qrows = await _quality(graph)
     adv_rate, arows = await _adversarial(graph)
