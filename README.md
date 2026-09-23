@@ -87,14 +87,38 @@ You'll see SSE frames: `node` (which step is running) → `citations` → stream
 
 ## Evals
 
+Three tiers, cheapest-first — each doubles as a CI gate (non-zero exit on regression):
+
 ```bash
 cd backend
-pytest evals/test_gst_tool.py             # the math guardrails (no infra needed)
-python -m evals.run_evals                 # retrieval recall@4 over labelled cases (needs db up)
+pytest evals/test_gst_tool.py evals/test_reranker.py   # pure: math + reranker + citation checks (no infra)
+python -m evals.run_evals                              # retrieval: recall@k / MRR, reranker off vs on (needs db)
+python -m evals.run_llm_evals                          # generation: LLM-as-judge + adversarial (needs db + key)
 ```
 
-`run_evals.py` exits non-zero if retrieval recall drops below threshold — a CI gate
-against silent RAG regressions.
+**1 · Deterministic guardrails** — the GST math is pinned in `test_gst_tool.py`
+(the LLM never computes), and the reranker/citation logic is unit-tested with an
+injectable scorer, so it runs with no DB, key, or model download.
+
+**2 · Retrieval quality (`run_evals.py`)** — recall@k and MRR over a labelled set,
+measured with the cross-encoder **reranker off vs on** so the lift is quantified,
+not asserted. On the current 27-case set (`top_k=4`):
+
+| config | recall@4 | MRR |
+|---|---|---|
+| hybrid (dense + sparse, RRF) | 89% | 0.790 |
+| **hybrid + cross-encoder reranker** | **93%** | **0.861** |
+
+The reranker (`app/reranker.py`, fastembed cross-encoder, local + keyless) re-scores
+the fused shortlist jointly per (query, provision) pair; it degrades gracefully to
+the fused order if the model can't load, so it's an enhancement, never a hard dep.
+
+**3 · Generation quality (`run_llm_evals.py`)** — runs the full agent, then grades
+each answer with an **LLM-as-judge** (faithfulness + answer-relevance, RAGAS-style)
+plus a **deterministic citation-validity** check (every `[Act, s.X]` cited must be
+in the retrieved context — catches invented citations). An **adversarial suite**
+(`adversarial.jsonl`) verifies the agent refuses out-of-scope/no-source questions
+and shrugs off prompt-injection in the query rather than getting hijacked.
 
 ## Observability
 
