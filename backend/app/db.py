@@ -23,7 +23,16 @@ async def _init(conn: asyncpg.Connection) -> None:
 async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
-        _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=8, init=_init)
+        # Pool sizes are env-tunable: on serverless (Vercel) many function instances
+        # each hold a pool, so keep max small and point DATABASE_URL at a pooled
+        # endpoint (e.g. a pgbouncer/serverless-pooler DSN) to avoid exhausting the
+        # database's connection limit.
+        _pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            min_size=int(os.getenv("DB_POOL_MIN", "1")),
+            max_size=int(os.getenv("DB_POOL_MAX", "8")),
+            init=_init,
+        )
     return _pool
 
 
