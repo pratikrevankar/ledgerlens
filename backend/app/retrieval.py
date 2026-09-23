@@ -9,10 +9,11 @@ place-of-supply), sparse nails exact statutory terms ("section 16", "LUT",
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from .db import get_pool
 from .embeddings import embed_query
+from .reranker import rerank, rerank_enabled
 
 RRF_K = 60  # standard RRF damping constant
 
@@ -69,28 +70,58 @@ def _rrf(*ranked_lists: List[str]) -> List[str]:
     return sorted(scores, key=lambda p: scores[p], reverse=True)
 
 
-async def retrieve(query: str, top_k: int = 4, pool_size: int = 10) -> List[Chunk]:
-    """Return the top_k most relevant provisions for a query, fused + hydrated."""
+async def retrieve(
+    query: str,
+    top_k: int = 4,
+    pool_size: int = 10,
+    rerank_pool: int = 12,
+    use_rerank: Optional[bool] = None,
+) -> List[Chunk]:
+    """Return the top_k most relevant provisions for a query.
+
+    Pipeline: dense + sparse → RRF fusion → (optional) cross-encoder rerank → top_k.
+    When reranking, we hydrate a WIDER shortlist (`rerank_pool`) because the
+    cross-encoder needs each candidate's text to re-score it; the reranker then
+    cuts back to top_k. `use_rerank` defaults to the RERANK_ENABLED env flag — the
+    eval harness flips it to measure recall@k / MRR with rerank off vs on.
+    """
+    do_rerank = rerank_enabled() if use_rerank is None else use_rerank
     dense, sparse = await _dense(query, pool_size), await _sparse(query, pool_size)
-    order = _rrf(dense, sparse)[:top_k]
+    order = _rrf(dense, sparse)
     if not order:
         return []
+    # Hydrate a shortlist: just top_k without rerank; a wider pool with it.
+    shortlist = order[: (rerank_pool if do_rerank else top_k)]
     pool = await get_pool()
     rows = await pool.fetch(
         """
         SELECT provision_id, act, section, title, citation_ref, content
         FROM gst_chunks WHERE provision_id = ANY($1)
         """,
-        order,
+        shortlist,
     )
     by_id = {r["provision_id"]: r for r in rows}
-    out: List[Chunk] = []
-    for rank, pid in enumerate(order):
+    candidates: List[Chunk] = []
+    for rank, pid in enumerate(shortlist):
         r = by_id.get(pid)
         if r:
-            out.append(Chunk(
+            candidates.append(Chunk(
                 provision_id=r["provision_id"], act=r["act"], section=r["section"],
                 title=r["title"], citation_ref=r["citation_ref"], content=r["content"],
-                score=1.0 / (rank + 1),
+                score=1.0 / (rank + 1),  # fusion rank; re-stamped below after rerank
             ))
-    return out
+
+    if do_rerank:
+        candidates = rerank(
+            query, candidates,
+            text_of=lambda c: f"{c.title}. {c.content}",
+            top_k=top_k,
+        )
+    else:
+        candidates = candidates[:top_k]
+
+    # Re-stamp score to reflect FINAL rank (post-rerank), so the UI/eval see the
+    # order the agent actually used.
+    for i, c in enumerate(candidates):
+        c.score = 1.0 / (i + 1)
+    return candidates

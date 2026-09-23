@@ -13,3 +13,15 @@
 {"query": "How do exports work under an LUT without paying IGST?", "expect": ["igst-s16"], "category": "exports"}
 {"query": "What is the due date for the annual return?", "expect": ["cgst-s44"], "category": "annual-return"}
 {"query": "What is the time of supply for goods?", "expect": ["cgst-s12"], "category": "time-of-supply"}
+{"query": "How do I pay my GST — from the cash ledger or the credit ledger?", "expect": ["cgst-s49"], "category": "payment"}
+{"query": "Do I have to register if I make any inter-state sale, even below the threshold?", "expect": ["cgst-s24"], "category": "compulsory-registration"}
+{"query": "Which return do I file to report my outward supplies?", "expect": ["cgst-s37-39"], "category": "returns"}
+{"query": "I bought services from an unregistered vendor — who pays the tax?", "expect": ["cgst-s9"], "category": "reverse-charge"}
+{"query": "How is the place of supply determined for goods that are dispatched?", "expect": ["igst-s10"], "category": "place-of-supply-goods"}
+{"query": "We import consulting services from a firm abroad — what's the place of supply?", "expect": ["igst-s13"], "category": "import-of-services"}
+{"query": "When does the liability for a service arise for GST?", "expect": ["cgst-s13"], "category": "time-of-supply-services"}
+{"query": "How do I look up the GST rate for a product by its HSN code?", "expect": ["rates-hsn"], "category": "rate-lookup"}
+{"query": "What counts as an intra-state supply?", "expect": ["igst-s8"], "category": "intra-state"}
+{"query": "Can I export without paying tax if I furnish a bond instead of an LUT?", "expect": ["igst-s16"], "category": "exports"}
+{"query": "What exactly is treated as a 'supply' under GST?", "expect": ["cgst-s7"], "category": "scope-of-supply"}
+{"query": "What's the tax treatment when goods move out of state on a sale?", "expect": ["igst-s5", "igst-s7"], "category": "interstate"}

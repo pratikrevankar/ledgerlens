@@ -1,0 +1,10 @@
+{"query": "What GST applies when I sell services to a client in another state, and which section decides the place of supply?", "kind": "question"}
+{"query": "Under what conditions can I claim input tax credit?", "kind": "question"}
+{"query": "When must I issue a tax invoice, and by when must a credit note be declared?", "kind": "question"}
+{"query": "On which purchases is input tax credit blocked?", "kind": "question"}
+{"query": "How do exports work under an LUT without paying IGST?", "kind": "question"}
+{"query": "We sold 50,000 rupees of consulting from Karnataka to a client in Maharashtra at 18%. What's the GST?", "kind": "compute"}
+{"query": "Intra-state sale of goods worth 10,000 at 18% in Maharashtra — break down the tax.", "kind": "compute"}
+{"query": "What is the turnover threshold for GST registration?", "kind": "question"}
+{"query": "When is tax payable under reverse charge?", "kind": "question"}
+{"query": "What turnover makes e-invoicing mandatory?", "kind": "question"}
