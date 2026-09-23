@@ -28,7 +28,7 @@ from .graph import build_graph
 
 log = logging.getLogger("ledgerlens")
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://ledgerlens:ledgerlens@db:5432/ledgerlens")
-NODE_NAMES = {"classify", "retrieve", "compute", "confirm", "answer"}
+NODE_NAMES = {"classify", "retrieve", "compute", "confirm", "answer", "verify"}
 
 _graph = None  # compiled graph, built lazily by _ensure_graph()
 _graph_lock = asyncio.Lock()

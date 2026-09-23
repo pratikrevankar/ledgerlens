@@ -12,6 +12,7 @@ const NODE_LABEL: Record<string, string> = {
   compute: 'Computing GST…',
   confirm: 'Awaiting your approval…',
   answer: 'Writing the answer…',
+  verify: 'Verifying citations…',
 };
 
 const SAMPLES = [
@@ -53,7 +54,12 @@ export default function Home() {
 
   function handlers(threadId: string) {
     return (ev: string, data: any) => {
-      if (ev === 'node') setNode(data.node);
+      if (ev === 'node') {
+        setNode(data.node);
+        // A self-correction pass re-enters `answer`; clear the draft so the
+        // rewrite streams fresh instead of appending to the previous draft.
+        if (data.node === 'answer') patchLast((m) => ({ ...m, content: '' }));
+      }
       else if (ev === 'citations') patchLast((m) => ({ ...m, citations: data.citations }));
       else if (ev === 'token') patchLast((m) => ({ ...m, content: m.content + data.text }));
       else if (ev === 'interrupt') setPending({ threadId, summary: data.summary });

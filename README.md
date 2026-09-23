@@ -28,6 +28,10 @@ or refuses if it has no source.** State-changing actions pause for human approva
    waits for your approval before it would commit anything.
 5. **Answer** — streamed token-by-token, **every claim cited**; unsupported → *"I
    don't have a source for that."*
+6. **Verify (Reflexion)** — a critic re-checks the draft against the retrieved
+   context: a *deterministic* pass rejects any invented citation, then an LLM
+   entailment pass flags unsupported claims. If either fails, the graph loops back
+   once and **self-corrects** before answering.
 
 ## Architecture
 

@@ -1,8 +1,10 @@
 """LedgerLens agent — a LangGraph state machine.
 
-    classify ─► retrieve ─┬─► compute ─►┐
-                          ├─► confirm ──►┤ (human-in-the-loop interrupt)
-                          └─────────────►┴─► answer (grounded, cite-or-refuse)
+    classify ─┬─► retrieve ─┬─► compute ─►┐
+              │             └─────────────┴─► answer ─► verify ─┬─► END
+              │                              ▲   (Reflexion critic) │
+              │                              └── self-correct once ─┘
+              └─► confirm ─► answer ─► END      (human-in-the-loop interrupt)
 
 Why a graph and not a single prompt: the steps have different trust levels.
 Retrieval and the GST math are deterministic and must not be hallucinated, so
@@ -20,8 +22,10 @@ from pydantic import BaseModel, Field
 
 from .retrieval import retrieve as hybrid_retrieve, Chunk
 from .tools import GstInput, compute_gst
+from .critic import verify_grounded
 
 LLM_MODEL = os.getenv("LLM_MODEL", "claude-sonnet-5")  # override with any current Claude model id
+MAX_REVISIONS = 1  # Reflexion: at most one self-correction pass after the critic
 
 
 def _llm(streaming: bool = False):
@@ -39,6 +43,9 @@ class AgentState(TypedDict, total=False):
     confirmed: Optional[bool]
     answer: str
     citations: List[str]
+    verified: Optional[bool]   # critic verdict on the current answer
+    critique: Optional[str]    # critic feedback the answer node self-corrects against
+    revision: int              # self-correction attempts so far (bounded by MAX_REVISIONS)
 
 
 # ── Structured LLM schemas ───────────────────────────────────────────
@@ -158,13 +165,48 @@ async def answer_node(state: AgentState):
     elif tool and tool.get("error") == "missing_inputs":
         tool_txt = f"\n\nThe user asked for a calculation but did not give: {tool['need']}. Ask for them."
 
+    # On a self-correction pass the critic left feedback — fold it into the prompt
+    # so the rewrite fixes the ungrounded claims rather than repeating them.
+    fix = ""
+    if state.get("critique"):
+        fix = (f"\n\nYOUR PREVIOUS DRAFT WAS NOT FULLY GROUNDED. {state['critique']}\n"
+               "Rewrite the answer to fix this — every claim must trace to the context above.")
+
     llm = _llm(streaming=True)
     from langchain_core.messages import SystemMessage, HumanMessage
     msg = await llm.ainvoke([
         SystemMessage(content=_ANSWER_SYS),
-        HumanMessage(content=f"Context:\n{ctx}{tool_txt}\n\nUser question: {state['query']}"),
+        HumanMessage(content=f"Context:\n{ctx}{tool_txt}\n\nUser question: {state['query']}{fix}"),
     ])
     return {"answer": _as_text(msg.content)}
+
+
+async def verify_node(state: AgentState) -> AgentState:
+    """Reflexion critic — is the drafted answer grounded in the retrieved context?
+
+    Deterministic invented-citation check first, then an LLM entailment check. If
+    ungrounded, bump the revision counter and hand back a critique; the router
+    loops to `answer` once (MAX_REVISIONS) so the model can self-correct."""
+    grounded, critique = await verify_grounded(
+        state.get("answer", ""),
+        "\n\n".join(f"[{c['citation']}] {c['title']}\n{c['content']}" for c in state.get("chunks", [])),
+        state.get("citations", []),
+    )
+    if grounded:
+        return {"verified": True, "critique": None}
+    return {"verified": False, "critique": critique, "revision": state.get("revision", 0) + 1}
+
+
+def _route_after_answer(state: AgentState) -> str:
+    # Action answers are deterministic (no LLM, no citations) — nothing to verify.
+    return "end" if state.get("intent") == "action" else "verify"
+
+
+def _route_after_verify(state: AgentState) -> str:
+    # Stop when grounded, or once we've spent our self-correction budget.
+    if state.get("verified") or state.get("revision", 0) > MAX_REVISIONS:
+        return "end"
+    return "answer"
 
 
 # ── Assembly ─────────────────────────────────────────────────────────
@@ -176,6 +218,7 @@ def build_graph(checkpointer=None):
     g.add_node("compute", compute_node)
     g.add_node("confirm", confirm_node)
     g.add_node("answer", answer_node)
+    g.add_node("verify", verify_node)
     g.set_entry_point("classify")
     g.add_conditional_edges("classify", _route_after_classify,
                             {"confirm": "confirm", "retrieve": "retrieve"})
@@ -183,5 +226,9 @@ def build_graph(checkpointer=None):
                             {"compute": "compute", "answer": "answer"})
     g.add_edge("compute", "answer")
     g.add_edge("confirm", "answer")
-    g.add_edge("answer", END)
+    # answer → verify (Reflexion critic) → self-correct once, or finish.
+    g.add_conditional_edges("answer", _route_after_answer,
+                            {"verify": "verify", "end": END})
+    g.add_conditional_edges("verify", _route_after_verify,
+                            {"answer": "answer", "end": END})
     return g.compile(checkpointer=checkpointer)

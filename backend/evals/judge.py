@@ -16,44 +16,15 @@ pure functions — unit-tested without a key or a database (see test_reranker.py
 from __future__ import annotations
 
 import os
-import re
-from typing import List, Optional
+from typing import List
 
 from pydantic import BaseModel, Field
 
-REFUSAL = "I don't have a source for that."
-_CITE_RE = re.compile(r"\[([^\]\[]+)\]")
-
-
-def is_refusal(answer: str) -> bool:
-    return REFUSAL.lower() in (answer or "").lower()
-
-
-def extract_citations(answer: str) -> List[str]:
-    """Pull bracketed citations like '[CGST Act, s.16]' out of an answer."""
-    return [m.strip() for m in _CITE_RE.findall(answer or "")]
-
-
-def _norm(s: str) -> str:
-    return re.sub(r"\s+", " ", (s or "").lower()).strip()
-
-
-def citation_validity(answer: str, retrieved_citations: List[str]) -> dict:
-    """Fraction of the answer's citations that match a retrieved provision.
-
-    An invented/hallucinated citation (one that wasn't in the retrieved context)
-    drags the score down. A refusal or an uncited answer scores 1.0 — nothing
-    false was asserted."""
-    cited = extract_citations(answer)
-    if not cited:
-        return {"score": 1.0, "n_cited": 0, "invalid": []}
-    allowed = {_norm(c) for c in retrieved_citations}
-    invalid = [c for c in cited if _norm(c) not in allowed]
-    return {
-        "score": (len(cited) - len(invalid)) / len(cited),
-        "n_cited": len(cited),
-        "invalid": invalid,
-    }
+# Groundedness helpers live in app.grounding so the runtime critic and this eval
+# judge score citations identically. Re-exported here for existing importers.
+from app.grounding import (  # noqa: F401
+    REFUSAL, citation_validity, extract_citations, is_refusal,
+)
 
 
 def _judge_llm():
